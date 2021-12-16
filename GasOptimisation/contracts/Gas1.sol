@@ -2,14 +2,9 @@
 pragma solidity 0.8.0;
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract Constants {
-    uint public tradeFlag = 1;
-    uint public basicFlag = 0;
-    uint public dividendFlag = 1;
-}
+contract GasContract is Ownable {
 
-
-contract GasContract is Ownable, Constants{
+    uint private basicFlag = 0;
 
     uint public totalSupply; // cannot be updated
     uint public paymentCounter;
@@ -22,16 +17,11 @@ contract GasContract is Ownable, Constants{
 
     mapping(address => uint256) public balances;
     mapping(address => Payment[]) public payments;
-    History[] public paymentHistory; // when a payment was updated   
-
 
     struct Payment {
       uint paymentID;
       PaymentType paymentType;
       address recipient;
-      string recipientName;  // max 8 characters
-      bool adminUpdated;
-      address admin;    // administrators address
       uint amount;
     }
 
@@ -42,131 +32,70 @@ contract GasContract is Ownable, Constants{
     }
 
     modifier onlyAdminOrOwner {
-        
-       if(checkForAdmin(msg.sender) ) {
         require (checkForAdmin(msg.sender), "Gas Contract Only Admin Check-  Caller not admin" );
         _;
-        } else if (msg.sender==contractOwner){
-            _;
-        } else {
-            revert("Error in Gas contract - onlyAdminOrOwner modifier : revert happened because the originator of the transaction was not the admin, and furthermore he wasn't the owner of the contract, so he cannot run this function"   );
-        }
     }
 
-    event supplyChanged(address indexed, uint256 indexed);
     event Transfer(address recipient, uint256 amount);
-    event PaymentUpdated(address  admin, uint256  ID, uint256  amount, string  recipient);
 
+    constructor(address[] memory _admins, uint256 _totalSupply) {
+        contractOwner  = msg.sender;
+        totalSupply = _totalSupply;
 
-   constructor(address[] memory _admins, uint256 _totalSupply) {
-      contractOwner  = msg.sender;
-      totalSupply = _totalSupply;
-      
-        for (uint256 ii = 0;ii<administrators.length ;ii++){
-            if(_admins[ii] != address(0)){ 
-                administrators[ii] = _admins[ii];
-                if(_admins[ii]==msg.sender){
+        for (uint256 i = 0;i<administrators.length ;i++){
+            if(_admins[i] != address(0)){ 
+                administrators[i] = _admins[i];
+                if(_admins[i]==msg.sender){
                     balances[msg.sender] = totalSupply;
                 }
                 else {
-                    balances[_admins[ii]] = 0;
-                }
-                if(_admins[ii]==msg.sender){
-                    emit supplyChanged(_admins[ii] ,totalSupply );
-                }
-                else if (_admins[ii]!=msg.sender) {
-                    emit supplyChanged(_admins[ii] ,0 );
+                    balances[_admins[i]] = 0;
                 }
             } 
-        }    
-   }
-   
-    function getPaymentHistory()public returns(History[] memory paymentHistory_) {
-        return paymentHistory;
+        }
     }
 
-   function checkForAdmin(address _user) public view returns (bool admin_) {
-       bool admin = false;
+   function checkForAdmin(address _user) public view returns (bool) {
        for (uint256 ii = 0; ii< administrators.length;ii++ ){
           if(administrators[ii] ==_user){
-              admin = true;
+              return true;
           }
        }
-       return admin;
+       return false;
    }
    
-function balanceOf(address _user) public view returns (uint balance_){
-    uint balance = balances[_user];
-    return balance; 
-}
- 
+    function balanceOf(address _user) public view returns (uint balance_){
+        return balances[_user];
+    }
 
-     function getTradingMode() public view returns (bool mode_){
-         bool mode = false;
-         if (tradeFlag == 1 || dividendFlag ==1) {
-             mode = true;
-         } else{
-             mode = false;
-         }
-         return mode;
-     }
-
-    function addHistory(address _updateAddress, bool _tradeMode) public returns(bool status_, bool tradeMode_) {
-        History memory history;
-        history.blockNumber = block.number;
-        history.lastUpdate = block.timestamp;
-        history.updatedBy = _updateAddress;
-        paymentHistory.push(history);
-        bool[] memory status = new bool[](tradePercent);
-        for(uint i = 0; i < tradePercent; i++){
-          status[i] = true;
-        }
-        return ((status[0]==true), _tradeMode);
+    function getTradingMode() public pure returns (bool){
+        return true;
     }
 
    function getPayments(address _user) public view returns (Payment[] memory payments_) {
-      require(_user != address(0) ,"Gas Contract - getPayments function - User must have a valid non zero address");
-       return payments[_user];
+        return payments[_user];
    }
 
-      function transfer(address _recipient, uint _amount, string calldata _name) public returns (bool status_) {
-      require(balances[msg.sender] >= _amount,"Gas Contract - Transfer function - Sender has insufficient Balance");
-      require(bytes(_name).length < 9,"Gas Contract - Transfer function -  The recipient name is too long, there is a max length of 8 characters");
-      balances[msg.sender] -= _amount;
-      balances[_recipient] += _amount;
-      emit Transfer(_recipient, _amount);
-      Payment memory payment;
-      payment.admin = address(0);   
-      payment.adminUpdated = false;
-      payment.paymentType = PaymentType.BasicPayment;
-      payment.recipient = _recipient;
-      payment.amount = _amount;
-      payment.recipientName = _name;
-      payment.paymentID = ++paymentCounter;
-      payments[msg.sender].push(payment);
-      bool[] memory status = new bool[](tradePercent);
-      for(uint i = 0; i < tradePercent; i++){
-          status[i] = true;
-      }
-    return (status[0]==true);
-   }
+    function transfer(address _recipient, uint _amount, string calldata _name) public returns (bool) {
+        require(balances[msg.sender] >= _amount,"Gas Contract - Transfer function - Sender has insufficient Balance");
+        balances[msg.sender] -= _amount;
+        balances[_recipient] += _amount;
+        emit Transfer(_recipient, _amount);
+        Payment memory payment;
+        payment.paymentType = PaymentType.BasicPayment;
+        payment.recipient = _recipient;
+        payment.amount = _amount;
+        payment.paymentID = ++paymentCounter;
+        payments[msg.sender].push(payment);
+        return (true);
+    }
 
-       function updatePayment(address _user, uint _ID, uint _amount,PaymentType _type ) public onlyAdminOrOwner {
-        require(_ID > 0,"Gas Contract - Update Payment function - ID must be greater than 0");
-        require(_amount > 0,"Gas Contract - Update Payment function - Amount must be greater than 0");
-        require(_user != address(0) ,"Gas Contract - Update Payment function - Administrator must have a valid non zero address");
-
-        for (uint256 ii=0;ii<payments[_user].length;ii++){
+    function updatePayment(address _user, uint _ID, uint _amount,PaymentType _type ) public onlyAdminOrOwner {
+        for (uint256 ii=0; ii < payments[_user].length;ii++){
             if(payments[_user][ii].paymentID==_ID){
-               payments[_user][ii].adminUpdated = true; 
-               payments[_user][ii].admin = _user;
-               payments[_user][ii].paymentType = _type;
-               payments[_user][ii].amount = _amount;
-               bool tradingMode = getTradingMode();
-               addHistory(_user, tradingMode);
-               emit PaymentUpdated(msg.sender, _ID, _amount,payments[_user][ii].recipientName);
+                payments[_user][ii].paymentType = _type;
+                payments[_user][ii].amount = _amount;
             }
         }
     }
-
 }
